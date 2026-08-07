@@ -277,8 +277,8 @@ function initMap() {
   state.markers = L.layerGroup().addTo(state.map);
   L.circleMarker([uni.lat, uni.lon], {
     radius: 9,
-    color: "#0f3d32",
-    fillColor: "#0f3d32",
+    color: "#1f6f5b",
+    fillColor: "#1f6f5b",
     fillOpacity: 0.9,
     weight: 2,
   })
@@ -389,41 +389,47 @@ function closeDrawer() {
 }
 
 function bindPills(rootSel, attr, onPick) {
-  $$(`${rootSel} .pill`).forEach((btn) => {
+  $$(`${rootSel} .filter-pill`).forEach((btn) => {
     btn.addEventListener("click", () => {
-      $$(`${rootSel} .pill`).forEach((b) => b.classList.toggle("active", b === btn));
+      $$(`${rootSel} .filter-pill`).forEach((b) => b.classList.toggle("active", b === btn));
       onPick(btn.dataset[attr] ?? "");
       renderGallery();
     });
   });
 }
 
+function resizeMapSoon() {
+  setTimeout(() => state.map?.invalidateSize(), 120);
+  setTimeout(() => state.map?.invalidateSize(), 320);
+}
+
 function bindUi() {
-  $("#btnFilters").addEventListener("click", () => {
-    const panel = $("#filtersPanel");
-    const open = panel.hidden;
-    panel.hidden = !open;
-    $("#btnFilters").setAttribute("aria-expanded", open ? "true" : "false");
+  $("#btnFoldControls")?.addEventListener("click", () => {
+    const collapsed = document.body.classList.toggle("filters-collapsed");
+    $("#btnFoldControls")?.setAttribute("aria-expanded", collapsed ? "false" : "true");
   });
 
-  $("#btnMap").addEventListener("click", () => {
-    const sheet = $("#mapSheet");
-    const open = sheet.hidden;
-    sheet.hidden = !open;
-    $("#btnMap").setAttribute("aria-pressed", open ? "true" : "false");
-    if (open) {
+  $("#btnMap")?.addEventListener("click", () => {
+    const hidden = document.body.classList.toggle("map-hidden");
+    $("#btnMap")?.setAttribute("aria-pressed", hidden ? "false" : "true");
+    if (!hidden) {
       initMap();
       updateMap(state.filtered);
-      setTimeout(() => state.map?.invalidateSize(), 100);
     }
-  });
-  $("#btnCloseMap").addEventListener("click", () => {
-    $("#mapSheet").hidden = true;
-    $("#btnMap").setAttribute("aria-pressed", "false");
+    resizeMapSoon();
   });
 
-  $("#drawerClose").addEventListener("click", closeDrawer);
-  $("#drawerBackdrop").addEventListener("click", closeDrawer);
+  $$(".grid-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $$(".grid-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      const cols = btn.dataset.cols || "2";
+      $("#gallery")?.classList.toggle("cols-2", cols === "2");
+      $("#gallery")?.classList.toggle("cols-3", cols === "3");
+    });
+  });
+
+  $("#drawerClose")?.addEventListener("click", closeDrawer);
+  $("#drawerBackdrop")?.addEventListener("click", closeDrawer);
 
   bindPills("#photoPills", "photos", (v) => {
     state.photosMin = Number(v) || 0;
@@ -439,10 +445,13 @@ function bindUi() {
   });
 
   const syncDist = () => {
-    const v = Number($("#fDistMax").value);
-    $("#fDistMaxLabel").textContent = v >= 90 ? "Any" : `${v} min`;
+    const el = $("#fDistMax");
+    if (!el) return;
+    const v = Number(el.value);
+    const label = $("#fDistMaxLabel");
+    if (label) label.textContent = v >= 90 ? "Any" : `${v} min`;
   };
-  $("#fDistMax").addEventListener("input", () => {
+  $("#fDistMax")?.addEventListener("input", () => {
     syncDist();
     renderGallery();
   });
@@ -459,7 +468,9 @@ function bindUi() {
     });
   });
 
-  $("#gallery").addEventListener("click", (e) => {
+  window.addEventListener("resize", resizeMapSoon);
+
+  $("#gallery")?.addEventListener("click", (e) => {
     const shortBtn = e.target.closest("[data-shortlist]");
     if (shortBtn) {
       e.stopPropagation();
@@ -483,65 +494,82 @@ function bindUi() {
     if (card) openDrawer(card.dataset.id);
   });
 
-  $("#btnSettings").addEventListener("click", () => {
+  $("#btnSettings")?.addEventListener("click", () => {
     const creds = Prefs.getCreds();
-    $("#gistToken").value = creds.token;
-    $("#gistId").value = creds.gistId;
-    $("#settingsMsg").hidden = true;
-    $("#settingsDialog").showModal();
+    const token = $("#gistToken");
+    const gist = $("#gistId");
+    const msg = $("#settingsMsg");
+    if (token) token.value = creds.token;
+    if (gist) gist.value = creds.gistId;
+    if (msg) msg.hidden = true;
+    $("#settingsDialog")?.showModal();
   });
 
-  $("#btnClearPrefs").addEventListener("click", () => {
+  $("#btnClearPrefs")?.addEventListener("click", () => {
     Prefs.clearCreds();
-    $("#gistToken").value = "";
-    $("#gistId").value = "";
+    if ($("#gistToken")) $("#gistToken").value = "";
+    if ($("#gistId")) $("#gistId").value = "";
     Prefs.setStatus("Local only");
-    $("#settingsMsg").hidden = false;
-    $("#settingsMsg").textContent = "Token cleared on this device.";
+    const msg = $("#settingsMsg");
+    if (msg) {
+      msg.hidden = false;
+      msg.textContent = "Token cleared on this device.";
+    }
   });
 
-  $("#settingsForm").addEventListener("submit", async (e) => {
+  $("#settingsForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const submitter = e.submitter;
     if (submitter?.value === "cancel") {
-      $("#settingsDialog").close();
+      $("#settingsDialog")?.close();
       return;
     }
     const msg = $("#settingsMsg");
-    msg.hidden = false;
-    msg.textContent = "Saving…";
+    if (msg) {
+      msg.hidden = false;
+      msg.textContent = "Saving…";
+    }
     try {
       const result = await Prefs.saveSettings({
-        token: $("#gistToken").value,
-        gistId: $("#gistId").value,
+        token: $("#gistToken")?.value || "",
+        gistId: $("#gistId")?.value || "",
       });
-      $("#gistId").value = Prefs.getCreds().gistId;
-      msg.textContent = result.localOnly
-        ? "Saved as local-only."
-        : `Synced. Gist ID: ${result.gistId}`;
+      if ($("#gistId")) $("#gistId").value = Prefs.getCreds().gistId;
+      if (msg) {
+        msg.textContent = result.localOnly
+          ? "Saved as local-only."
+          : `Synced. Gist ID: ${result.gistId}`;
+      }
       renderGallery();
     } catch (err) {
-      msg.textContent = "Failed: " + (err.message || err);
+      if (msg) msg.textContent = "Failed: " + (err.message || err);
     }
   });
 }
 
 async function main() {
-  bindUi();
+  try {
+    bindUi();
+  } catch (err) {
+    console.error("bindUi failed", err);
+  }
   Prefs.setStatus();
   try {
     const [listingsRes, configRes] = await Promise.all([
-      fetch("data/listings.json"),
-      fetch("data/config.json"),
+      fetch("data/listings.json", { cache: "no-store" }),
+      fetch("data/config.json", { cache: "no-store" }),
     ]);
     if (!listingsRes.ok) throw new Error("Could not load listings.json");
     const payload = await listingsRes.json();
     state.config = configRes.ok ? await configRes.json() : { exported_at: payload.exported_at };
     state.listings = payload.listings || payload || [];
     await Prefs.pull();
+    initMap();
     renderGallery();
+    resizeMapSoon();
   } catch (err) {
-    $("#galleryMeta").textContent = "Failed to load data: " + err.message;
+    const meta = $("#galleryMeta");
+    if (meta) meta.textContent = "Failed to load data: " + err.message;
     console.error(err);
   }
 }
