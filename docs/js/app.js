@@ -7,6 +7,7 @@ const state = {
   map: null,
   markers: null,
   mapReady: false,
+  focusOverlay: null,
   photosMin: 0,
   shortlistMode: "all",
   term: "",
@@ -152,6 +153,12 @@ function cardHtml(l) {
   if (l.rooms) tags.push(`<span class="tag">${l.rooms} room</span>`);
   if (l.size_sqm) tags.push(`<span class="tag">${l.size_sqm} m²</span>`);
 
+  const mapIcon = `
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/>
+      <circle cx="12" cy="10" r="3"/>
+    </svg>`;
+
   return `
     <article class="card${l.status === "gone" ? " gone" : ""}${isShort ? " shortlisted" : ""}" data-id="${l.id}">
       <div class="card-media">
@@ -160,6 +167,7 @@ function cardHtml(l) {
         <div class="price-fab">${fmtPrice(l.price)} <span>/ mo</span></div>
         <button type="button" class="hide-fab" data-hide="${l.id}" title="Hide" aria-label="Hide">✕</button>
         <button type="button" class="shortlist-fab${isShort ? " on" : ""}" data-shortlist="${l.id}" title="Shortlist" aria-label="Shortlist">★</button>
+        <button type="button" class="map-fab map-jump" data-map-id="${l.id}" ${l.lat == null || l.lon == null ? "disabled" : ""} title="Show on map" aria-label="Show on map">${mapIcon}</button>
         <div class="score-ring ${sc}">${Math.round(l.match_score || 0)}</div>
         ${l.is_new ? `<span class="badge new">NEW</span>` : ""}
       </div>
@@ -266,9 +274,144 @@ function renderGallery() {
   updateMap(items);
 }
 
+function clearFocusOverlay() {
+  if (state.focusOverlay && state.map) {
+    state.map.removeLayer(state.focusOverlay);
+  }
+  state.focusOverlay = null;
+}
+
+function ensureMapVisible() {
+  if (document.body.classList.contains("map-hidden")) {
+    document.body.classList.remove("map-hidden");
+    $("#btnMap")?.setAttribute("aria-pressed", "true");
+    initMap();
+    updateMap(state.filtered);
+    resizeMapSoon();
+  }
+}
+
+function focusListingOnMap(listing) {
+  ensureMapVisible();
+  if (!state.map || listing?.lat == null || listing?.lon == null) {
+    toast("No map location for this listing");
+    return;
+  }
+  const uni = state.config?.university;
+  if (!uni?.lat || !uni?.lon) {
+    state.map.flyTo([listing.lat, listing.lon], 15, { duration: 0.85 });
+    return;
+  }
+
+  clearFocusOverlay();
+
+  const listingLatLng = L.latLng(listing.lat, listing.lon);
+  const uniLatLng = L.latLng(uni.lat, uni.lon);
+  const distKm =
+    listing.distance_uni_km != null
+      ? Number(listing.distance_uni_km)
+      : uniLatLng.distanceTo(listingLatLng) / 1000;
+  const distLabel =
+    distKm < 1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(1)} km`;
+
+  const group = L.layerGroup();
+  group.addLayer(
+    L.polyline([uniLatLng, listingLatLng], {
+      color: "#1f6f5b",
+      weight: 3,
+      opacity: 0.85,
+      dashArray: "7 7",
+    })
+  );
+
+  const mid = L.latLng((uni.lat + listing.lat) / 2, (uni.lon + listing.lon) / 2);
+  group.addLayer(
+    L.marker(mid, {
+      interactive: false,
+      icon: L.divIcon({
+        className: "dist-label-wrap",
+        html: `<div class="dist-label">${escapeHtml(distLabel)}</div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      }),
+    })
+  );
+
+  group.addLayer(
+    L.circleMarker(listingLatLng, {
+      radius: 13,
+      color: "#1f6f5b",
+      weight: 3,
+      fillColor: "#ffffff",
+      fillOpacity: 0.95,
+    })
+  );
+  group.addTo(state.map);
+  state.focusOverlay = group;
+
+  state.map.flyToBounds(L.latLngBounds([uniLatLng, listingLatLng]), {
+    padding: [56, 56],
+    maxZoom: 15,
+    duration: 0.55,
+    easeLinearity: 0.35,
+  });
+
+  state.markers?.eachLayer((layer) => {
+    if (layer._listingId === listing.id) layer.openTooltip?.();
+  });
+
+  document.querySelector(".map-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function tooltipHtml(l) {
+  const images = allImages(l);
+  const sc = scoreClass(l.match_score || 0);
+  const dist = fmtDistPrimary(l);
+  const metaBits = [l.district || l.address, dist].filter(Boolean).join(" · ");
+  const tags = [];
+  if (l.furnished) tags.push("furnished");
+  if (l.balcony) tags.push("balcony");
+  if (l.rooms) tags.push(`${l.rooms} rm`);
+  if (l.size_sqm) tags.push(`${l.size_sqm} m²`);
+  if (l.term_type === "short") tags.push("short-term");
+  else if (l.term_type === "long") tags.push("long-term");
+  if (l.tenancy_type === "owner") tags.push("owner");
+  else if (l.tenancy_type === "sublet") tags.push("sublet");
+  if (Prefs.isShortlisted(l.id)) tags.unshift("shortlist");
+
+  let sourceTag = l.source || "";
+  try {
+    sourceTag = new URL(l.url).hostname.replace(/^www\./, "");
+  } catch (_) {}
+
+  const hero = images[0]
+    ? `<div class="tip-hero"><img src="${escapeHtml(images[0])}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+         ${images.length > 1 ? `<span class="tip-photos">${images.length} photos</span>` : ""}
+         <span class="tip-price-fab">${fmtPrice(l.price)}</span>
+         <span class="tip-score ${sc}">${Math.round(l.match_score || 0)}</span>
+       </div>`
+    : `<div class="tip-hero tip-empty"><span class="tip-price-fab">${fmtPrice(l.price)}</span>No photo</div>`;
+
+  return `
+    <div class="tip-card">
+      ${hero}
+      <div class="tip-body">
+        <div class="tip-title">${escapeHtml(l.title || "Apartment")}</div>
+        <div class="tip-meta">${escapeHtml(metaBits || "Augsburg")}</div>
+        <div class="tip-tags">
+          <span class="tip-tag">${escapeHtml(sourceTag)}</span>
+          ${tags
+            .slice(0, 4)
+            .map((t) => `<span class="tip-tag${t === "shortlist" ? " cat-shortlist" : ""}">${escapeHtml(t)}</span>`)
+            .join("")}
+        </div>
+      </div>
+    </div>`;
+}
+
 function initMap() {
   if (state.mapReady || typeof L === "undefined") return;
-  const uni = state.config?.university || { lat: 48.3345, lon: 10.8974 };
+  const uni = state.config?.university || { lat: 48.3345, lon: 10.8974, name: "University of Augsburg" };
   state.map = L.map("map", { zoomControl: true }).setView([uni.lat, uni.lon], 12);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap",
@@ -289,20 +432,27 @@ function initMap() {
 
 function updateMap(listings) {
   if (!state.mapReady || !state.markers) return;
+  clearFocusOverlay();
   state.markers.clearLayers();
   listings.forEach((l) => {
     if (l.lat == null || l.lon == null) return;
+    const approx = l.geo_precision && l.geo_precision !== "exact";
     const marker = L.circleMarker([l.lat, l.lon], {
-      radius: 8,
-      color: "#fff",
+      radius: approx ? 7 : 8,
+      color: approx ? "#8b8b8b" : "#ffffff",
       weight: 2,
       fillColor: pinColor(l),
-      fillOpacity: 0.95,
+      fillOpacity: approx ? 0.8 : 0.95,
+      dashArray: approx ? "2 2" : null,
     });
-    marker.bindTooltip(
-      `<strong>${escapeHtml(l.title || "")}</strong><br/>${fmtPrice(l.price)}`,
-      { direction: "top", opacity: 1 }
-    );
+    marker._listingId = l.id;
+    marker.bindTooltip(tooltipHtml(l), {
+      direction: "top",
+      offset: [0, -10],
+      opacity: 1,
+      sticky: false,
+      className: "listing-tip",
+    });
     marker.on("click", () => openDrawer(l.id));
     state.markers.addLayer(marker);
   });
@@ -359,6 +509,7 @@ function openDrawer(id) {
     </div>
     <div class="drawer-actions">
       <a class="btn primary" href="${escapeHtml(l.url)}" target="_blank" rel="noopener">Open listing ↗</a>
+      <button type="button" class="btn" id="drawerMap" ${l.lat == null || l.lon == null ? "disabled" : ""}>Show on map</button>
       <button type="button" class="btn${isShort ? " primary" : ""}" id="drawerShortlist">${isShort ? "★ Shortlisted" : "☆ Shortlist"}</button>
       <button type="button" class="btn ghost" id="drawerHide">${isHid ? "Unhide" : "Hide"}</button>
     </div>
@@ -374,6 +525,10 @@ function openDrawer(id) {
     toast(Prefs.isShortlisted(l.id) ? "Shortlisted" : "Removed from shortlist");
     renderGallery();
     openDrawer(l.id);
+  };
+  $("#drawerMap").onclick = () => {
+    closeDrawer();
+    focusListingOnMap(l);
   };
   $("#drawerHide").onclick = () => {
     Prefs.toggleHidden(l.id);
@@ -487,6 +642,18 @@ function bindUi() {
   window.addEventListener("resize", resizeMapSoon);
 
   $("#gallery")?.addEventListener("click", (e) => {
+    const mapBtn = e.target.closest(".map-jump");
+    if (mapBtn) {
+      e.stopPropagation();
+      if (mapBtn.disabled) {
+        toast("No map location for this listing");
+        return;
+      }
+      const id = Number(mapBtn.dataset.mapId);
+      const listing = state.listings.find((x) => x.id === id);
+      if (listing) focusListingOnMap(listing);
+      return;
+    }
     const shortBtn = e.target.closest("[data-shortlist]");
     if (shortBtn) {
       e.stopPropagation();
