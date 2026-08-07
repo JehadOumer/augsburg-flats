@@ -1,5 +1,5 @@
-# Local pipeline DB + caches
-data/
+# Local pipeline DB + caches (not the published site/data JSON)
+/data/
 **/__pycache__/
 *.pyc
 .venv/
