@@ -15,45 +15,41 @@
 <body>
   <div class="sticky-shell">
     <section class="controls notranslate" id="controlsBar">
-      <div class="top-compact">
-        <div class="top-line brand-line">
-          <div class="brand-inline">
-            <h1>Augsburg Flats</h1>
-            <span class="subtitle">University area · own place · €600–700 · max €900</span>
-          </div>
-          <div class="top-actions">
-            <button type="button" class="btn ghost sm" id="btnMap" aria-pressed="true" title="Show or hide map">Map</button>
-            <button type="button" class="btn ghost sm" id="btnSettings" title="Sync settings">Sync</button>
-            <button type="button" class="controls-fold" id="btnFoldControls" title="Collapse filters" aria-expanded="true" aria-controls="controlsBody">
-              <svg class="fold-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="top-line tools-line">
-          <label class="dist-filter">
-            <span class="dist-label-text">Max metro</span>
-            <div class="dist-slider">
-              <input type="range" id="fDistMax" min="10" max="90" step="5" value="90" />
-              <span id="fDistMaxLabel">Any</span>
+      <div class="controls-main" id="controlsMain">
+        <div class="top-compact">
+          <div class="top-line brand-line">
+            <div class="brand-inline">
+              <h1>Augsburg Flats</h1>
+              <span class="subtitle">University area · own place · €600–700 · max €900</span>
             </div>
-          </label>
-          <p class="sync-status" id="syncStatus"></p>
+            <div class="top-actions">
+              <button type="button" class="btn ghost sm" id="btnMap" aria-pressed="true" title="Show or hide map">Map</button>
+              <button type="button" class="btn ghost sm" id="btnSettings" title="Sync settings">Sync</button>
+            </div>
+          </div>
+          <div class="top-line tools-line">
+            <label class="dist-filter">
+              <span class="dist-label-text">Max metro</span>
+              <div class="dist-slider">
+                <input type="range" id="fDistMax" min="10" max="90" step="5" value="90" />
+                <span id="fDistMaxLabel">Any</span>
+              </div>
+            </label>
+            <p class="sync-status" id="syncStatus"></p>
+          </div>
         </div>
-      </div>
 
-      <div class="controls-body" id="controlsBody">
-        <div class="filters filters-row">
-          <label>Search
-            <input type="search" id="fQ" placeholder="balcony, Göggingen…" />
-          </label>
-          <label>Max €
-            <input type="number" id="fPriceMax" value="900" min="0" step="50" />
-          </label>
-          <label>Min €
-            <input type="number" id="fPriceMin" value="" min="0" step="50" placeholder="—" />
-          </label>
+        <div class="controls-body" id="controlsBody">
+          <div class="filters filters-row">
+            <label>Search
+              <input type="search" id="fQ" placeholder="balcony, Göggingen…" />
+            </label>
+            <label>Max €
+              <input type="number" id="fPriceMax" value="900" min="0" step="50" />
+            </label>
+            <label>Min €
+              <input type="number" id="fPriceMin" value="" min="0" step="50" placeholder="—" />
+            </label>
           <div class="filter-group">
             <span class="filter-group-label">Photos</span>
             <div class="pills" id="photoPills">
@@ -104,7 +100,13 @@
           <label class="checkbox"><input type="checkbox" id="fGone" /> Show rented/gone</label>
           <label class="checkbox"><input type="checkbox" id="fShowHidden" /> Hidden only</label>
         </div>
+        </div>
       </div>
+      <button type="button" class="controls-toggle" id="btnFoldControls" title="Hide filters" aria-expanded="true" aria-controls="controlsMain">
+        <svg class="fold-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
     </section>
 
     <div class="layout" id="layout">

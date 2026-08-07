@@ -404,10 +404,26 @@ function resizeMapSoon() {
 }
 
 function bindUi() {
+  const setFiltersCollapsed = (collapsed) => {
+    document.body.classList.toggle("filters-collapsed", collapsed);
+    const btn = $("#btnFoldControls");
+    if (!btn) return;
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    btn.title = collapsed ? "Show filters" : "Hide filters";
+    try {
+      localStorage.setItem("augsburg_flats_filters_collapsed", collapsed ? "1" : "0");
+    } catch (_) {}
+    resizeMapSoon();
+  };
+
   $("#btnFoldControls")?.addEventListener("click", () => {
-    const collapsed = document.body.classList.toggle("filters-collapsed");
-    $("#btnFoldControls")?.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    setFiltersCollapsed(!document.body.classList.contains("filters-collapsed"));
   });
+  try {
+    if (localStorage.getItem("augsburg_flats_filters_collapsed") === "1") {
+      setFiltersCollapsed(true);
+    }
+  } catch (_) {}
 
   $("#btnMap")?.addEventListener("click", () => {
     const hidden = document.body.classList.toggle("map-hidden");
