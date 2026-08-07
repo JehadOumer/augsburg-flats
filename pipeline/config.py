@@ -5,7 +5,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "listings.db"
-SITE_DIR = BASE_DIR / "site"
+SITE_DIR = BASE_DIR / "docs"
 SITE_DATA_DIR = SITE_DIR / "data"
 LISTINGS_JSON = SITE_DATA_DIR / "listings.json"
 CONFIG_JSON = SITE_DATA_DIR / "config.json"

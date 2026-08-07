@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0f3d32" />
+  <title>Augsburg Flats</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar notranslate">
+    <div class="brand">
+      <h1>Augsburg Flats</h1>
+      <p class="tagline">Own place · €600–700 · max €900</p>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" class="icon-btn" id="btnMap" aria-pressed="false" title="Map">Map</button>
+      <button type="button" class="icon-btn" id="btnFilters" aria-expanded="false" title="Filters">Filters</button>
+      <button type="button" class="icon-btn" id="btnSettings" title="Sync settings">⚙</button>
+    </div>
+  </header>
+
+  <section class="filters-panel" id="filtersPanel" hidden>
+    <div class="filters-grid">
+      <label>Search
+        <input type="search" id="fQ" placeholder="balcony, Göggingen…" />
+      </label>
+      <label>Max €
+        <input type="number" id="fPriceMax" value="900" min="0" step="50" />
+      </label>
+      <label>Min €
+        <input type="number" id="fPriceMin" value="" min="0" step="50" placeholder="—" />
+      </label>
+      <label>Sort
+        <select id="fSort">
+          <option value="score">Best match</option>
+          <option value="price_asc">Price ↑</option>
+          <option value="price_desc">Price ↓</option>
+          <option value="transit">Fastest by metro</option>
+          <option value="distance">Closest</option>
+          <option value="newest">Newest</option>
+          <option value="size">Largest</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="filter-group">
+      <span class="filter-group-label">Photos</span>
+      <div class="pills" id="photoPills">
+        <button type="button" class="pill active" data-photos="0">Any</button>
+        <button type="button" class="pill" data-photos="2">2+</button>
+        <button type="button" class="pill" data-photos="3">3+</button>
+        <button type="button" class="pill" data-photos="5">5+</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-group-label">Shortlist</span>
+      <div class="pills" id="shortlistPills">
+        <button type="button" class="pill active" data-shortlist="all">All</button>
+        <button type="button" class="pill" data-shortlist="only">Only</button>
+        <button type="button" class="pill" data-shortlist="hide">Hide</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-group-label">Term</span>
+      <div class="pills" id="termPills">
+        <button type="button" class="pill active" data-term="">Any</button>
+        <button type="button" class="pill" data-term="short">Short</button>
+        <button type="button" class="pill" data-term="long">Long</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-group-label">Tenancy</span>
+      <div class="pills" id="tenancyPills">
+        <button type="button" class="pill active" data-tenancy="">Any</button>
+        <button type="button" class="pill" data-tenancy="owner">Direct</button>
+        <button type="button" class="pill" data-tenancy="sublet">Sublet</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-group-label">Max metro</span>
+      <div class="dist-row">
+        <input type="range" id="fDistMax" min="10" max="90" step="5" value="90" />
+        <span id="fDistMaxLabel">Any</span>
+      </div>
+    </div>
+    <div class="check-row">
+      <label class="check"><input type="checkbox" id="fSept" /> Free by Sept 1</label>
+      <label class="check"><input type="checkbox" id="fGone" /> Show rented</label>
+      <label class="check"><input type="checkbox" id="fShowHidden" /> Show hidden only</label>
+    </div>
+    <p class="sync-status" id="syncStatus"></p>
+  </section>
+
+  <div class="map-sheet" id="mapSheet" hidden>
+    <div class="map-sheet-bar">
+      <strong>Map</strong>
+      <button type="button" class="icon-btn" id="btnCloseMap">Close</button>
+    </div>
+    <div id="map"></div>
+    <div class="map-legend">
+      <span><i class="dot high"></i>≥70</span>
+      <span><i class="dot mid"></i>40–69</span>
+      <span><i class="dot low"></i>&lt;40</span>
+      <span><i class="dot short"></i>★</span>
+    </div>
+  </div>
+
+  <main class="gallery-wrap">
+    <div class="gallery-meta" id="galleryMeta">Loading…</div>
+    <div class="gallery" id="gallery"></div>
+  </main>
+
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="drawer" id="drawer" hidden>
+    <button type="button" class="drawer-close" id="drawerClose" aria-label="Close">×</button>
+    <div id="drawerContent"></div>
+  </aside>
+
+  <dialog class="settings-dialog" id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <h2>Sync shortlist &amp; hide</h2>
+      <p class="hint">Uses a private GitHub Gist so iPhone and iPad share the same shortlist. Token stays only in this browser.</p>
+      <label>GitHub token (gist scope)
+        <input type="password" id="gistToken" autocomplete="off" placeholder="ghp_…" />
+      </label>
+      <label>Gist ID <span class="muted">(leave blank to create)</span>
+        <input type="text" id="gistId" placeholder="optional" />
+      </label>
+      <p class="settings-msg" id="settingsMsg" hidden></p>
+      <div class="dialog-actions">
+        <button type="submit" class="btn primary" value="save">Save &amp; sync</button>
+        <button type="button" class="btn ghost" id="btnClearPrefs">Clear local token</button>
+        <button type="submit" class="btn ghost" value="cancel">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/prefs.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

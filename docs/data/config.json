@@ -1,0 +1,18 @@
+{
+  "university": {
+    "name": "University of Augsburg",
+    "lat": 48.3345,
+    "lon": 10.8974,
+    "address": "Universitätsstraße 2, 86159 Augsburg"
+  },
+  "city_center": {
+    "name": "Augsburg City Center (Rathausplatz)",
+    "lat": 48.369,
+    "lon": 10.8987
+  },
+  "price_ideal_min": 600,
+  "price_ideal_max": 700,
+  "price_hard_max": 900,
+  "move_in_target": "2026-09-01",
+  "exported_at": "2026-08-07T19:23:03+00:00"
+}

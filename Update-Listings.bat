@@ -29,7 +29,7 @@ if errorlevel 1 (
 )
 
 echo [3/4] Staging site data...
-git add site/data/listings.json site/data/config.json
+git add docs/data/listings.json docs/data/config.json
 git diff --cached --quiet
 if errorlevel 1 (
   for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH:mm"') do set STAMP=%%i
