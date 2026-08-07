@@ -33,9 +33,9 @@ git push -u origin main
 
 ### 3. Desktop update shortcut
 
-1. Right-click `Update-Listings.bat` → **Create shortcut**
-2. Move the shortcut to your Desktop
-3. Double-click twice a day (or whenever you want fresh listings)
+Run `Create-Desktop-Shortcut.bat` once (or right-click `Update-Listings.bat` → **Create shortcut** and move it to Desktop).
+
+Double-click the shortcut twice a day (or whenever you want fresh listings).
 
 The bat will: install deps → scrape → write `site/data/listings.json` → commit → push. Logs stay in the terminal window until you press a key.
 
