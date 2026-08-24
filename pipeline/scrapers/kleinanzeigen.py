@@ -22,7 +22,7 @@ SEARCH_URLS = [
     for n in range(2, 6)
 ]
 MAX_LISTINGS = 150
-DETAIL_ENRICH_LIMIT = 35  # fetch detail pages for full galleries on this many
+DETAIL_ENRICH_LIMIT = 90  # fetch detail pages for full galleries (prefer sparse)
 
 # Ad photos: https://img.kleinanzeigen.de/api/v1/prod-ads/images/<id>?rule=$_2.JPG
 _IMG_RE = re.compile(
@@ -64,7 +64,9 @@ class KleinanzeigenScraper(BaseScraper):
             if new_on_page == 0 or len(listings) >= MAX_LISTINGS:
                 break
         listings = listings[:MAX_LISTINGS]
-        for item in listings[:DETAIL_ENRICH_LIMIT]:
+        # Prefer cards that still only have the list-page thumbnail.
+        ordered = sorted(listings, key=lambda it: len(it.get("image_urls") or []))
+        for item in ordered[:DETAIL_ENRICH_LIMIT]:
             try:
                 self._enrich_detail(item)
             except Exception as exc:  # noqa: BLE001

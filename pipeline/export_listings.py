@@ -29,6 +29,7 @@ from pipeline.config import (
 )
 from pipeline.scrapers.runner import (
     ensure_studentenwerk_resource,
+    enrich_sparse_galleries,
     fill_transit_times,
     geocode_pending,
     run_all_scrapers,
@@ -306,6 +307,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip geocode/transit fill after scrape",
     )
+    parser.add_argument(
+        "--enrich-images",
+        action="store_true",
+        help="Backfill full photo galleries for listings that only have 0–1 images",
+    )
     args = parser.parse_args(argv)
 
     db.init_db()
@@ -321,6 +327,10 @@ def main(argv: list[str] | None = None) -> int:
             logger.info("Geocoded %s · transit filled %s", n_geo, n_transit)
     else:
         logger.info("Skipping scrape (--skip-scrape)")
+
+    # Always try to fill sparse galleries after a scrape; optional when export-only.
+    if not args.skip_scrape or args.enrich_images:
+        enrich_sparse_galleries(limit=150)
 
     n = export_listings_json()
     logger.info("Done. %s listings exported.", n)

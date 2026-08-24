@@ -9,7 +9,8 @@ from typing import Optional
 
 from bs4 import BeautifulSoup
 
-from pipeline.scrapers.base import BaseScraper, abs_url, extract_images_from_soup, normalize_image_url, parse_float, parse_price
+from pipeline import db
+from pipeline.scrapers.base import BaseScraper, abs_url, normalize_image_url, parse_float, parse_price
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,15 @@ SEARCH_URL = (
     "?mmi=400&mma=900&rfr=1&sorting=Relevancy"
 )
 MAX_LISTINGS = 120
+# Exposé pages hold the full carousel; list cards only expose the title shot.
+DETAIL_ENRICH_LIMIT = 100
+_MMS_RE = re.compile(r"https://mms\.immowelt\.de/[^\s\"'\\<>]+", re.I)
 
 
 class ImmoweltScraper(BaseScraper):
     source = "immowelt"
     base_url = "https://www.immowelt.de"
+    _session_warmed = False
 
     def scrape(self) -> list[dict]:
         listings: list[dict] = []
@@ -32,6 +37,7 @@ class ImmoweltScraper(BaseScraper):
             try:
                 resp = self.fetch(page_url)
                 resp.raise_for_status()
+                self._session_warmed = True
                 soup = BeautifulSoup(resp.text, "lxml")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Immowelt page %s failed: %s", page, exc)
@@ -46,7 +52,127 @@ class ImmoweltScraper(BaseScraper):
                     new_on_page += 1
             if new_on_page == 0 or len(listings) >= MAX_LISTINGS:
                 break
-        return listings[:MAX_LISTINGS]
+        listings = listings[:MAX_LISTINGS]
+        self._enrich_sparse_galleries(listings)
+        return listings
+
+    def _warm_session(self) -> None:
+        """Hit a search page first — bare exposé fetches often get 403."""
+        if self._session_warmed:
+            return
+        try:
+            resp = self.fetch(SEARCH_URL)
+            if resp.status_code == 200:
+                self._session_warmed = True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Immowelt warm failed: %s", exc)
+
+    @staticmethod
+    def _extract_gallery_from_html(html: str) -> list[str]:
+        """Collect unique mms.immowelt.de carousel photos from an exposé page."""
+        found: list[str] = []
+        seen: set[str] = set()
+        for raw in _MMS_RE.findall(html):
+            url = raw.replace("\\u002F", "/").replace("\\/", "/").rstrip("\\")
+            # Drop truncated / non-image tokens
+            base = url.split("?")[0].lower()
+            if not base.endswith((".jpg", ".jpeg", ".png", ".webp")):
+                continue
+            if base in seen:
+                continue
+            seen.add(base)
+            found.append(url)
+            if len(found) >= 20:
+                break
+        return found
+
+    @staticmethod
+    def _stored_gallery_size(url: str) -> int:
+        try:
+            with db.get_conn() as conn:
+                row = conn.execute(
+                    "SELECT image_urls FROM listings WHERE url = ?", (url,)
+                ).fetchone()
+            if row and row["image_urls"]:
+                return len(json.loads(row["image_urls"]))
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
+
+    def _enrich_detail(self, item: dict) -> bool:
+        """Fetch exposé page and replace title-thumb with full gallery.
+
+        Returns True when the response looks blocked.
+        """
+        self._warm_session()
+        resp = self.fetch(item["url"])
+        if resp.status_code in (403, 429):
+            return True
+        if resp.status_code != 200:
+            return False
+        photos = self._extract_gallery_from_html(resp.text)
+        if len(photos) >= 2:
+            item["image_urls"] = photos
+        elif photos and len(item.get("image_urls") or []) < 1:
+            item["image_urls"] = photos
+
+        # Prefer a longer description when the list card only had a teaser
+        soup = BeautifulSoup(resp.text, "lxml")
+        for sel in (
+            "[data-testid='object-description']",
+            "[class*='Description']",
+            "#objectDescription",
+            "section[class*='description']",
+        ):
+            el = soup.select_one(sel)
+            if el:
+                txt = el.get_text("\n", strip=True)
+                if len(txt) > len(item.get("description") or ""):
+                    item["description"] = txt[:3000]
+                break
+        return False
+
+    def _enrich_sparse_galleries(self, listings: list[dict]) -> None:
+        """Fetch exposé pages for cards that still only have a title photo."""
+        # Prefer listings that need photos most (0–1 images, not already rich in DB)
+        candidates = sorted(
+            listings,
+            key=lambda it: (len(it.get("image_urls") or []), self._stored_gallery_size(it.get("url") or "")),
+        )
+        fetches = 0
+        upgraded = 0
+        consecutive_blocks = 0
+        for item in candidates:
+            if fetches >= DETAIL_ENRICH_LIMIT:
+                break
+            current = len(item.get("image_urls") or [])
+            stored = self._stored_gallery_size(item.get("url") or "")
+            if current >= 3 or stored >= 3:
+                continue
+            fetches += 1
+            try:
+                blocked = self._enrich_detail(item)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Immowelt detail failed %s: %s", item.get("url"), exc)
+                continue
+            if blocked:
+                consecutive_blocks += 1
+                if consecutive_blocks >= 3:
+                    logger.warning(
+                        "Immowelt blocking exposé fetches after %s tries — stopping enrichment",
+                        fetches,
+                    )
+                    break
+                continue
+            consecutive_blocks = 0
+            if len(item.get("image_urls") or []) >= 2:
+                upgraded += 1
+        if fetches:
+            logger.info(
+                "Immowelt gallery enrich: fetched %s exposés, upgraded %s galleries",
+                fetches,
+                upgraded,
+            )
 
     def _from_json_ld(self, soup: BeautifulSoup) -> list[dict]:
         out = []
@@ -105,9 +231,24 @@ class ImmoweltScraper(BaseScraper):
             "price": price,
             "address": address or "Augsburg",
             "city": "Augsburg",
-            "image_urls": [item["image"]] if isinstance(item.get("image"), str) else [],
+            "image_urls": self._images_from_value(item.get("image")),
             "status": "active",
         }
+
+    @staticmethod
+    def _images_from_value(val) -> list[str]:
+        out: list[str] = []
+        if isinstance(val, str) and val:
+            out.append(val)
+        elif isinstance(val, list):
+            for entry in val:
+                if isinstance(entry, str) and entry:
+                    out.append(entry)
+                elif isinstance(entry, dict):
+                    u = entry.get("url") or entry.get("uri") or entry.get("contentUrl") or ""
+                    if u:
+                        out.append(u)
+        return out[:20]
 
     def _from_next_data(self, soup: BeautifulSoup) -> list[dict]:
         out = []
@@ -164,18 +305,11 @@ class ImmoweltScraper(BaseScraper):
                 filter(None, [address.get("street"), address.get("district"), address.get("city") or "Augsburg"])
             )
         district = it.get("district") or it.get("cityQuarter")
-        images = []
+        images: list[str] = []
         for img_key in ("image", "titlePicture", "pictures", "images"):
-            val = it.get(img_key)
-            if isinstance(val, str):
-                images.append(val)
-            elif isinstance(val, list) and val:
-                first = val[0]
-                if isinstance(first, str):
-                    images.append(first)
-                elif isinstance(first, dict):
-                    images.append(first.get("url") or first.get("uri") or "")
-        images = [i for i in images if i]
+            for u in self._images_from_value(it.get(img_key)):
+                if u not in images:
+                    images.append(u)
 
         return {
             "source": self.source,
@@ -189,7 +323,7 @@ class ImmoweltScraper(BaseScraper):
             "address": str(address) if address else "Augsburg",
             "district": str(district) if district else None,
             "city": "Augsburg",
-            "image_urls": images[:5],
+            "image_urls": images[:20],
             "status": "active",
         }
 
@@ -270,6 +404,7 @@ class ImmonetScraper(ImmoweltScraper):
             try:
                 resp = self.fetch(page_url)
                 resp.raise_for_status()
+                self._session_warmed = True
                 soup = BeautifulSoup(resp.text, "lxml")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Immonet page %s failed: %s", page, exc)
@@ -285,4 +420,6 @@ class ImmonetScraper(ImmoweltScraper):
                     new_on_page += 1
             if new_on_page == 0 or len(listings) >= 100:
                 break
-        return listings[:100]
+        listings = listings[:100]
+        self._enrich_sparse_galleries(listings)
+        return listings

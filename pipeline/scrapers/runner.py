@@ -180,6 +180,99 @@ def ensure_all_map_pins() -> int:
     return updated
 
 
+def enrich_sparse_galleries(*, limit: int = 150) -> dict[str, int]:
+    """Backfill exposé carousels for active listings that still have 0–1 photos."""
+    rows = db.list_listings(status="active", include_gone=False, hidden=None, sort="score")
+    sparse = [
+        row
+        for row in rows
+        if row.get("url") and len(row.get("image_urls") or []) < 2
+    ]
+    priority = {
+        "immowelt": 0,
+        "immonet": 1,
+        "kleinanzeigen": 2,
+        "wg_gesucht": 3,
+        "immosurf": 4,
+        "wohnungsboerse": 5,
+    }
+    sparse.sort(key=lambda r: (priority.get(str(r.get("source") or ""), 50), r.get("id") or 0))
+    sparse = sparse[:limit]
+
+    stats = {"checked": 0, "upgraded": 0, "skipped": 0, "failed": 0}
+    if not sparse:
+        logger.info("Gallery backfill: nothing sparse to enrich")
+        return stats
+
+    scrapers: dict[str, object] = {}
+
+    def scraper_for(source: str):
+        if source in scrapers:
+            return scrapers[source]
+        if source in ("immowelt", "immonet"):
+            scrapers[source] = ImmoweltScraper()
+            # Immonet exposes are on immowelt.de; same enricher works.
+        elif source == "kleinanzeigen":
+            scrapers[source] = KleinanzeigenScraper()
+        elif source == "wg_gesucht":
+            scrapers[source] = WGGesuchtScraper()
+        elif source == "immosurf":
+            scrapers[source] = ImmosurfScraper()
+        elif source == "wohnungsboerse":
+            scrapers[source] = WohnungsboerseScraper()
+        else:
+            return None
+        return scrapers[source]
+
+    try:
+        for row in sparse:
+            source = str(row.get("source") or "")
+            scraper = scraper_for(source)
+            if scraper is None or not hasattr(scraper, "_enrich_detail"):
+                stats["skipped"] += 1
+                continue
+            stats["checked"] += 1
+            item = {
+                "url": row["url"],
+                "image_urls": list(row.get("image_urls") or []),
+                "description": row.get("description") or "",
+                "address": row.get("address"),
+            }
+            before = len(item["image_urls"])
+            try:
+                result = scraper._enrich_detail(item)
+                # WG returns True when blocked
+                if result is True and source == "wg_gesucht":
+                    stats["failed"] += 1
+                    continue
+                # Immosurf returns a new dict (or None) instead of mutating in place
+                if isinstance(result, dict):
+                    item = result
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Gallery backfill failed %s: %s", row.get("url"), exc)
+                stats["failed"] += 1
+                continue
+            photos = item.get("image_urls") or []
+            if len(photos) <= before:
+                continue
+            updates: dict = {"image_urls": photos[:20]}
+            if len(item.get("description") or "") > len(row.get("description") or ""):
+                updates["description"] = item["description"]
+            if item.get("address") and item["address"] != row.get("address"):
+                updates["address"] = item["address"]
+            db.update_listing_fields(row["id"], updates)
+            stats["upgraded"] += 1
+    finally:
+        for s in scrapers.values():
+            try:
+                s.close()  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                pass
+
+    logger.info("Gallery backfill: %s", stats)
+    return stats
+
+
 def run_all_scrapers(
     *,
     sources: Optional[list[str]] = None,

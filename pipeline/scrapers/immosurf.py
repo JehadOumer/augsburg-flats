@@ -61,10 +61,12 @@ class ImmosurfScraper(BaseScraper):
                 if new_on_page == 0:
                     break
 
-        # Enrich a subset with detail pages for better address/coords/images
+        # Enrich a subset with detail pages for better address/coords/images.
+        # Prefer listings that still only have a single card thumbnail.
         listings = list(by_url.values())
+        listings.sort(key=lambda it: len(it.get("image_urls") or []))
         enriched = []
-        for item in listings[:60]:
+        for item in listings[:80]:
             try:
                 detail = self._enrich_detail(item)
                 enriched.append(detail or item)
@@ -73,7 +75,7 @@ class ImmosurfScraper(BaseScraper):
                 enriched.append(item)
         # include remaining without detail fetch
         seen = {e["url"] for e in enriched}
-        for item in listings[60:150]:
+        for item in listings[80:150]:
             if item["url"] not in seen:
                 enriched.append(item)
         return enriched

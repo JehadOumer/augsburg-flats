@@ -25,7 +25,7 @@ SEARCH_URLS = [
     for page in range(0, 3)
 ]
 MAX_LISTINGS = 120
-DETAIL_FETCH_BUDGET = 60  # max detail-page fetches per run (politeness)
+DETAIL_FETCH_BUDGET = 90  # max detail-page fetches per run (politeness)
 MAX_CONSECUTIVE_BLOCKS = 3  # abort enrichment when WG starts rate-limiting
 
 # Gallery photos live on img.wg-gesucht.de/media/up/... in several size variants
@@ -65,10 +65,20 @@ class WGGesuchtScraper(BaseScraper):
         """
         fetches = 0
         consecutive_blocks = 0
-        for item in listings:
+        # Prefer sparse galleries so the budget isn't spent on already-rich ads.
+        ordered = sorted(
+            listings,
+            key=lambda it: (
+                self._stored_gallery_size(it["url"]),
+                len(it.get("image_urls") or []),
+            ),
+        )
+        for item in ordered:
             if fetches >= DETAIL_FETCH_BUDGET:
                 break
             if self._stored_gallery_size(item["url"]) >= 3:
+                continue
+            if len(item.get("image_urls") or []) >= 3:
                 continue
             fetches += 1
             time.sleep(0.5)  # extra politeness on top of BaseScraper.fetch
