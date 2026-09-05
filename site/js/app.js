@@ -18,7 +18,8 @@ const state = {
 
 const SOURCE_LABELS = {
   kleinanzeigen: "Kleinanzeigen",
-  immonet: "Immonet",
+  // Immonet search is hosted on Immowelt — same portal, same URLs.
+  immonet: "Immowelt",
   wg_gesucht: "WG-Gesucht",
   immosurf: "Immosurf",
   immowelt: "Immowelt",
@@ -29,7 +30,37 @@ const SOURCE_LABELS = {
   manual: "Manual",
 };
 
+/** Filter dropdown groups: Immowelt + Immonet share one checkbox. */
+const SOURCE_FILTER_GROUPS = [
+  { key: "immowelt", label: "Immowelt", sources: ["immowelt", "immonet"] },
+  { key: "kleinanzeigen", label: "Kleinanzeigen", sources: ["kleinanzeigen"] },
+  { key: "wg_gesucht", label: "WG-Gesucht", sources: ["wg_gesucht"] },
+  { key: "immosurf", label: "Immosurf", sources: ["immosurf"] },
+  { key: "hc24", label: "HC24", sources: ["hc24"] },
+  { key: "immobilienscout24", label: "ImmoScout24", sources: ["immobilienscout24"] },
+  { key: "wohnungsboerse", label: "Wohnungsbörse", sources: ["wohnungsboerse"] },
+  { key: "studentenwerk", label: "Studentenwerk", sources: ["studentenwerk"] },
+  { key: "manual", label: "Manual", sources: ["manual"] },
+];
+
 const SOURCE_STORAGE_KEY = "augsburg_flats_sources";
+
+function sourceGroupFor(source) {
+  const raw = String(source || "").trim();
+  return SOURCE_FILTER_GROUPS.find((g) => g.sources.includes(raw)) || null;
+}
+
+function sourceLabel(key) {
+  const group = SOURCE_FILTER_GROUPS.find((g) => g.key === key);
+  if (group) return group.label;
+  return SOURCE_LABELS[key] || String(key || "Other").replace(/_/g, " ");
+}
+
+function listingSourceTag(l) {
+  const group = sourceGroupFor(l.source);
+  if (group) return group.label;
+  return sourceLabel(l.source);
+}
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -159,10 +190,7 @@ function cardHtml(l) {
   const isShort = Prefs.isShortlisted(l.id);
   const dist = fmtDistPrimary(l);
   const metaBits = [l.district || l.address, dist].filter(Boolean).join(" · ");
-  let sourceTag = l.source || "";
-  try {
-    sourceTag = new URL(l.url).hostname.replace(/^www\./, "");
-  } catch (_) {}
+  const sourceTag = listingSourceTag(l);
 
   const tags = [`<span class="tag">${escapeHtml(sourceTag)}</span>`];
   if (isShort) tags.push(`<span class="tag cat-shortlist">shortlist</span>`);
@@ -227,7 +255,11 @@ function filterListings() {
   if (state.tenancy) items = items.filter((l) => l.tenancy_type === state.tenancy);
 
   if (state.selectedSources.size > 0) {
-    items = items.filter((l) => state.selectedSources.has(String(l.source || "")));
+    items = items.filter((l) => {
+      const group = sourceGroupFor(l.source);
+      const key = group ? group.key : String(l.source || "");
+      return state.selectedSources.has(key);
+    });
   }
 
   if (priceMax != null) items = items.filter((l) => l.price == null || l.price <= priceMax);
@@ -400,10 +432,7 @@ function tooltipHtml(l) {
   else if (l.tenancy_type === "sublet") tags.push("sublet");
   if (Prefs.isShortlisted(l.id)) tags.unshift("shortlist");
 
-  let sourceTag = l.source || "";
-  try {
-    sourceTag = new URL(l.url).hostname.replace(/^www\./, "");
-  } catch (_) {}
+  let sourceTag = listingSourceTag(l);
 
   const hero = images[0]
     ? `<div class="tip-hero"><img src="${escapeHtml(images[0])}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
@@ -564,23 +593,22 @@ function closeDrawer() {
   $("#drawerBackdrop").hidden = true;
 }
 
-function sourceLabel(key) {
-  return SOURCE_LABELS[key] || String(key || "Other").replace(/_/g, " ");
-}
-
 function availableSources() {
   const counts = new Map();
   for (const l of state.listings) {
     if (l.status === "gone") continue;
-    const key = String(l.source || "").trim();
+    const group = sourceGroupFor(l.source);
+    const key = group ? group.key : String(l.source || "").trim();
     if (!key) continue;
     counts.set(key, (counts.get(key) || 0) + 1);
   }
-  return [...counts.entries()].sort((a, b) => {
-    const la = sourceLabel(a[0]).toLowerCase();
-    const lb = sourceLabel(b[0]).toLowerCase();
-    return la.localeCompare(lb) || b[1] - a[1];
-  });
+  return SOURCE_FILTER_GROUPS.filter((g) => counts.has(g.key))
+    .map((g) => [g.key, counts.get(g.key)])
+    .concat(
+      [...counts.entries()]
+        .filter(([k]) => !SOURCE_FILTER_GROUPS.some((g) => g.key === k))
+        .sort((a, b) => sourceLabel(a[0]).localeCompare(sourceLabel(b[0])))
+    );
 }
 
 function persistSelectedSources() {
@@ -589,13 +617,29 @@ function persistSelectedSources() {
   } catch (_) {}
 }
 
+function normalizeSourceSelection(keys) {
+  const out = new Set();
+  for (const raw of keys) {
+    const key = String(raw || "").trim();
+    if (!key) continue;
+    // Migrate old separate "immonet" selections into Immowelt group.
+    if (key === "immonet") {
+      out.add("immowelt");
+      continue;
+    }
+    const group = sourceGroupFor(key);
+    out.add(group ? group.key : key);
+  }
+  return out;
+}
+
 function loadSelectedSources() {
   try {
     const raw = localStorage.getItem(SOURCE_STORAGE_KEY);
     if (!raw) return;
     const arr = JSON.parse(raw);
     if (Array.isArray(arr)) {
-      state.selectedSources = new Set(arr.map(String).filter(Boolean));
+      state.selectedSources = normalizeSourceSelection(arr);
     }
   } catch (_) {}
 }
@@ -653,7 +697,7 @@ function buildSourceDropdown() {
     if (!checked.length || checked.length >= known.size) {
       state.selectedSources.clear();
     } else {
-      state.selectedSources = new Set(checked);
+      state.selectedSources = normalizeSourceSelection(checked);
     }
     persistSelectedSources();
     syncSourceDropdown();
