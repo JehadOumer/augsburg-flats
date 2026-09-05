@@ -12,7 +12,24 @@ const state = {
   shortlistMode: "all",
   term: "",
   tenancy: "",
+  /** Empty set = all sources. Otherwise only selected source keys. */
+  selectedSources: new Set(),
 };
+
+const SOURCE_LABELS = {
+  kleinanzeigen: "Kleinanzeigen",
+  immonet: "Immonet",
+  wg_gesucht: "WG-Gesucht",
+  immosurf: "Immosurf",
+  immowelt: "Immowelt",
+  hc24: "HC24",
+  immobilienscout24: "ImmoScout24",
+  wohnungsboerse: "Wohnungsbörse",
+  studentenwerk: "Studentenwerk",
+  manual: "Manual",
+};
+
+const SOURCE_STORAGE_KEY = "augsburg_flats_sources";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -208,6 +225,10 @@ function filterListings() {
 
   if (state.term) items = items.filter((l) => l.term_type === state.term);
   if (state.tenancy) items = items.filter((l) => l.tenancy_type === state.tenancy);
+
+  if (state.selectedSources.size > 0) {
+    items = items.filter((l) => state.selectedSources.has(String(l.source || "")));
+  }
 
   if (priceMax != null) items = items.filter((l) => l.price == null || l.price <= priceMax);
   if (priceMin != null) items = items.filter((l) => l.price == null || l.price >= priceMin);
@@ -553,6 +574,94 @@ function bindPills(rootSel, attr, onPick) {
   });
 }
 
+function sourceLabel(key) {
+  return SOURCE_LABELS[key] || String(key || "Other").replace(/_/g, " ");
+}
+
+function availableSources() {
+  const counts = new Map();
+  for (const l of state.listings) {
+    if (l.status === "gone") continue;
+    const key = String(l.source || "").trim();
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => {
+    const la = sourceLabel(a[0]).toLowerCase();
+    const lb = sourceLabel(b[0]).toLowerCase();
+    return la.localeCompare(lb) || b[1] - a[1];
+  });
+}
+
+function persistSelectedSources() {
+  try {
+    localStorage.setItem(SOURCE_STORAGE_KEY, JSON.stringify([...state.selectedSources]));
+  } catch (_) {}
+}
+
+function loadSelectedSources() {
+  try {
+    const raw = localStorage.getItem(SOURCE_STORAGE_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      state.selectedSources = new Set(arr.map(String).filter(Boolean));
+    }
+  } catch (_) {}
+}
+
+function syncSourcePillActiveState() {
+  const allMode = state.selectedSources.size === 0;
+  $$("#sourcePills .filter-pill").forEach((btn) => {
+    const key = btn.dataset.source || "";
+    if (key === "__all__") {
+      btn.classList.toggle("active", allMode);
+    } else {
+      btn.classList.toggle("active", !allMode && state.selectedSources.has(key));
+    }
+  });
+}
+
+function buildSourcePills() {
+  const root = $("#sourcePills");
+  if (!root) return;
+  const known = new Set(availableSources().map(([k]) => k));
+  // Drop saved selections that no longer exist in the data.
+  for (const key of [...state.selectedSources]) {
+    if (!known.has(key)) state.selectedSources.delete(key);
+  }
+  const buttons = [
+    `<button type="button" class="filter-pill" data-source="__all__">All</button>`,
+    ...availableSources().map(
+      ([key, n]) =>
+        `<button type="button" class="filter-pill" data-source="${escapeHtml(key)}" title="${escapeHtml(
+          sourceLabel(key)
+        )}">${escapeHtml(sourceLabel(key))} <span class="pill-count">${n}</span></button>`
+    ),
+  ];
+  root.innerHTML = buttons.join("");
+  root.querySelectorAll(".filter-pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.source || "";
+      if (key === "__all__") {
+        state.selectedSources.clear();
+      } else if (state.selectedSources.has(key)) {
+        state.selectedSources.delete(key);
+      } else {
+        state.selectedSources.add(key);
+      }
+      // If every available source is selected, treat as All.
+      if (state.selectedSources.size > 0 && state.selectedSources.size >= known.size) {
+        state.selectedSources.clear();
+      }
+      persistSelectedSources();
+      syncSourcePillActiveState();
+      renderGallery();
+    });
+  });
+  syncSourcePillActiveState();
+}
+
 function resizeMapSoon() {
   setTimeout(() => state.map?.invalidateSize(), 120);
   setTimeout(() => state.map?.invalidateSize(), 320);
@@ -746,6 +855,8 @@ async function main() {
     const payload = await listingsRes.json();
     state.config = configRes.ok ? await configRes.json() : { exported_at: payload.exported_at };
     state.listings = payload.listings || payload || [];
+    loadSelectedSources();
+    buildSourcePills();
     await Prefs.pull();
     initMap();
     renderGallery();

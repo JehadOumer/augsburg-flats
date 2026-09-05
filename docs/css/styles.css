@@ -239,6 +239,21 @@ body.filters-collapsed .controls-main {
   border-color: var(--ink);
   color: #fff;
 }
+.filter-group-sources {
+  flex: 1 1 100%;
+}
+.filter-group-sources .pills {
+  gap: 0.3rem;
+}
+.filter-pill .pill-count {
+  opacity: 0.72;
+  font-weight: 500;
+  font-size: 0.75em;
+  margin-left: 0.15rem;
+}
+.filter-pill.active .pill-count {
+  opacity: 0.85;
+}
 .checkbox {
   flex-direction: row !important;
   align-items: center;
