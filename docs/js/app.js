@@ -564,16 +564,6 @@ function closeDrawer() {
   $("#drawerBackdrop").hidden = true;
 }
 
-function bindPills(rootSel, attr, onPick) {
-  $$(`${rootSel} .filter-pill`).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      $$(`${rootSel} .filter-pill`).forEach((b) => b.classList.toggle("active", b === btn));
-      onPick(btn.dataset[attr] ?? "");
-      renderGallery();
-    });
-  });
-}
-
 function sourceLabel(key) {
   return SOURCE_LABELS[key] || String(key || "Other").replace(/_/g, " ");
 }
@@ -610,56 +600,91 @@ function loadSelectedSources() {
   } catch (_) {}
 }
 
-function syncSourcePillActiveState() {
-  const allMode = state.selectedSources.size === 0;
-  $$("#sourcePills .filter-pill").forEach((btn) => {
-    const key = btn.dataset.source || "";
-    if (key === "__all__") {
-      btn.classList.toggle("active", allMode);
-    } else {
-      btn.classList.toggle("active", !allMode && state.selectedSources.has(key));
-    }
-  });
+function sourceSummaryText() {
+  if (state.selectedSources.size === 0) return "All";
+  const labels = [...state.selectedSources].map(sourceLabel);
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return labels.join(" · ");
+  return `${labels.length} selected`;
 }
 
-function buildSourcePills() {
-  const root = $("#sourcePills");
+function syncSourceDropdown() {
+  const allMode = state.selectedSources.size === 0;
+  const allCb = $("#sourceAll");
+  if (allCb) allCb.checked = allMode;
+  $$("#sourceDdOptions input[type=checkbox]").forEach((cb) => {
+    cb.checked = !allMode && state.selectedSources.has(cb.value);
+  });
+  const summary = $("#sourceDdSummary");
+  if (summary) summary.textContent = sourceSummaryText();
+  const btn = $("#sourceDdBtn");
+  if (btn) btn.classList.toggle("has-filter", !allMode);
+}
+
+function setSourceDropdownOpen(open) {
+  const panel = $("#sourceDdPanel");
+  const btn = $("#sourceDdBtn");
+  if (!panel || !btn) return;
+  panel.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function buildSourceDropdown() {
+  const root = $("#sourceDdOptions");
   if (!root) return;
-  const known = new Set(availableSources().map(([k]) => k));
-  // Drop saved selections that no longer exist in the data.
+  const sources = availableSources();
+  const known = new Set(sources.map(([k]) => k));
   for (const key of [...state.selectedSources]) {
     if (!known.has(key)) state.selectedSources.delete(key);
   }
-  const buttons = [
-    `<button type="button" class="filter-pill" data-source="__all__">All</button>`,
-    ...availableSources().map(
-      ([key, n]) =>
-        `<button type="button" class="filter-pill" data-source="${escapeHtml(key)}" title="${escapeHtml(
-          sourceLabel(key)
-        )}">${escapeHtml(sourceLabel(key))} <span class="pill-count">${n}</span></button>`
-    ),
-  ];
-  root.innerHTML = buttons.join("");
-  root.querySelectorAll(".filter-pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const key = btn.dataset.source || "";
-      if (key === "__all__") {
-        state.selectedSources.clear();
-      } else if (state.selectedSources.has(key)) {
-        state.selectedSources.delete(key);
-      } else {
-        state.selectedSources.add(key);
-      }
-      // If every available source is selected, treat as All.
-      if (state.selectedSources.size > 0 && state.selectedSources.size >= known.size) {
-        state.selectedSources.clear();
-      }
-      persistSelectedSources();
-      syncSourcePillActiveState();
-      renderGallery();
-    });
+  root.innerHTML = sources
+    .map(
+      ([key, n]) => `
+      <label class="filter-dd-option">
+        <input type="checkbox" value="${escapeHtml(key)}" />
+        <span>${escapeHtml(sourceLabel(key))}</span>
+        <span class="opt-count">${n}</span>
+      </label>`
+    )
+    .join("");
+
+  const applyFromChecks = () => {
+    const checked = $$("#sourceDdOptions input[type=checkbox]:checked").map((cb) => cb.value);
+    if (!checked.length || checked.length >= known.size) {
+      state.selectedSources.clear();
+    } else {
+      state.selectedSources = new Set(checked);
+    }
+    persistSelectedSources();
+    syncSourceDropdown();
+    renderGallery();
+  };
+
+  $("#sourceAll")?.addEventListener("change", () => {
+    state.selectedSources.clear();
+    persistSelectedSources();
+    syncSourceDropdown();
+    renderGallery();
   });
-  syncSourcePillActiveState();
+
+  root.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    cb.addEventListener("change", applyFromChecks);
+  });
+
+  const btn = $("#sourceDdBtn");
+  btn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = btn.getAttribute("aria-expanded") !== "true";
+    setSourceDropdownOpen(open);
+  });
+
+  $("#sourceDdPanel")?.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => setSourceDropdownOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setSourceDropdownOpen(false);
+  });
+
+  syncSourceDropdown();
 }
 
 function resizeMapSoon() {
@@ -711,18 +736,19 @@ function bindUi() {
   $("#drawerClose")?.addEventListener("click", closeDrawer);
   $("#drawerBackdrop")?.addEventListener("click", closeDrawer);
 
-  bindPills("#photoPills", "photos", (v) => {
-    state.photosMin = Number(v) || 0;
+  const syncSelectFilters = () => {
+    state.photosMin = Number($("#fPhotos")?.value) || 0;
+    state.shortlistMode = $("#fShortlist")?.value || "all";
+    state.term = $("#fTerm")?.value || "";
+    state.tenancy = $("#fTenancy")?.value || "";
+  };
+  ["fPhotos", "fShortlist", "fTerm", "fTenancy"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", () => {
+      syncSelectFilters();
+      renderGallery();
+    });
   });
-  bindPills("#shortlistPills", "shortlist", (v) => {
-    state.shortlistMode = v || "all";
-  });
-  bindPills("#termPills", "term", (v) => {
-    state.term = v || "";
-  });
-  bindPills("#tenancyPills", "tenancy", (v) => {
-    state.tenancy = v || "";
-  });
+  syncSelectFilters();
 
   const syncDist = () => {
     const el = $("#fDistMax");
@@ -856,7 +882,7 @@ async function main() {
     state.config = configRes.ok ? await configRes.json() : { exported_at: payload.exported_at };
     state.listings = payload.listings || payload || [];
     loadSelectedSources();
-    buildSourcePills();
+    buildSourceDropdown();
     await Prefs.pull();
     initMap();
     renderGallery();

@@ -41,71 +41,78 @@
 
         <div class="controls-body" id="controlsBody">
           <div class="filters filters-row">
-            <label>Search
+            <label class="field-grow">Search
               <input type="search" id="fQ" placeholder="balcony, Göggingen…" />
             </label>
-            <label>Max €
+            <label class="field-narrow">Max €
               <input type="number" id="fPriceMax" value="900" min="0" step="50" />
             </label>
-            <label>Min €
+            <label class="field-narrow">Min €
               <input type="number" id="fPriceMin" value="" min="0" step="50" placeholder="—" />
             </label>
-          <div class="filter-group">
-            <span class="filter-group-label">Photos</span>
-            <div class="pills" id="photoPills">
-              <button type="button" class="filter-pill active" data-photos="0">Any</button>
-              <button type="button" class="filter-pill" data-photos="2">2+</button>
-              <button type="button" class="filter-pill" data-photos="3">3+</button>
-              <button type="button" class="filter-pill" data-photos="5">5+</button>
+            <label>Photos
+              <select id="fPhotos" class="filter-select">
+                <option value="0" selected>Any</option>
+                <option value="2">2+</option>
+                <option value="3">3+</option>
+                <option value="5">5+</option>
+              </select>
+            </label>
+            <label>Shortlist
+              <select id="fShortlist" class="filter-select">
+                <option value="all" selected>All</option>
+                <option value="only">Only</option>
+                <option value="hide">Hide</option>
+              </select>
+            </label>
+            <label>Term
+              <select id="fTerm" class="filter-select">
+                <option value="" selected>Any</option>
+                <option value="short">Short</option>
+                <option value="long">Long</option>
+              </select>
+            </label>
+            <label>Tenancy
+              <select id="fTenancy" class="filter-select">
+                <option value="" selected>Any</option>
+                <option value="owner">Direct</option>
+                <option value="sublet">Sublet</option>
+              </select>
+            </label>
+            <div class="filter-dd" id="sourceDropdown">
+              <span class="filter-dd-label">Sources</span>
+              <button type="button" class="filter-dd-btn" id="sourceDdBtn" aria-haspopup="listbox" aria-expanded="false">
+                <span id="sourceDdSummary">All</span>
+                <svg class="filter-dd-caret" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <div class="filter-dd-panel" id="sourceDdPanel" hidden role="listbox" aria-multiselectable="true">
+                <label class="filter-dd-option">
+                  <input type="checkbox" id="sourceAll" checked />
+                  <span>All sources</span>
+                </label>
+                <div class="filter-dd-divider"></div>
+                <div id="sourceDdOptions"></div>
+              </div>
             </div>
+            <label>Sort
+              <select id="fSort" class="filter-select">
+                <option value="score">Best match</option>
+                <option value="price_asc">Price ↑</option>
+                <option value="price_desc">Price ↓</option>
+                <option value="transit">Fastest by metro</option>
+                <option value="distance">Closest</option>
+                <option value="newest">Newest</option>
+                <option value="size">Largest</option>
+              </select>
+            </label>
           </div>
-          <div class="filter-group">
-            <span class="filter-group-label">Shortlist</span>
-            <div class="pills" id="shortlistPills">
-              <button type="button" class="filter-pill active" data-shortlist="all">All</button>
-              <button type="button" class="filter-pill" data-shortlist="only">Only</button>
-              <button type="button" class="filter-pill" data-shortlist="hide">Hide</button>
-            </div>
+          <div class="filters filters-row filters-row-actions">
+            <label class="checkbox"><input type="checkbox" id="fSept" /> Free by Sept 1</label>
+            <label class="checkbox"><input type="checkbox" id="fGone" /> Show rented/gone</label>
+            <label class="checkbox"><input type="checkbox" id="fShowHidden" /> Hidden only</label>
           </div>
-          <div class="filter-group">
-            <span class="filter-group-label">Term</span>
-            <div class="pills" id="termPills">
-              <button type="button" class="filter-pill active" data-term="">Any</button>
-              <button type="button" class="filter-pill" data-term="short">Short</button>
-              <button type="button" class="filter-pill" data-term="long">Long</button>
-            </div>
-          </div>
-          <div class="filter-group">
-            <span class="filter-group-label">Tenancy</span>
-            <div class="pills" id="tenancyPills">
-              <button type="button" class="filter-pill active" data-tenancy="">Any</button>
-              <button type="button" class="filter-pill" data-tenancy="owner">Direct</button>
-              <button type="button" class="filter-pill" data-tenancy="sublet">Sublet</button>
-            </div>
-          </div>
-          <div class="filter-group filter-group-sources">
-            <span class="filter-group-label">Sources</span>
-            <div class="pills" id="sourcePills" aria-label="Filter by listing source">
-              <button type="button" class="filter-pill active" data-source="__all__">All</button>
-            </div>
-          </div>
-          <label>Sort
-            <select id="fSort">
-              <option value="score">Best match</option>
-              <option value="price_asc">Price ↑</option>
-              <option value="price_desc">Price ↓</option>
-              <option value="transit">Fastest by metro</option>
-              <option value="distance">Closest</option>
-              <option value="newest">Newest</option>
-              <option value="size">Largest</option>
-            </select>
-          </label>
-        </div>
-        <div class="filters filters-row filters-row-actions">
-          <label class="checkbox"><input type="checkbox" id="fSept" /> Free by Sept 1</label>
-          <label class="checkbox"><input type="checkbox" id="fGone" /> Show rented/gone</label>
-          <label class="checkbox"><input type="checkbox" id="fShowHidden" /> Hidden only</label>
-        </div>
         </div>
       </div>
       <button type="button" class="controls-toggle" id="btnFoldControls" title="Hide filters" aria-expanded="true" aria-controls="controlsMain">
